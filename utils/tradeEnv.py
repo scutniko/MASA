@@ -856,7 +856,7 @@ class StockPortfolioEnv_cash(StockPortfolioEnv):
                 # Training at the end of epoch
                 ori_profit_rate = np.append([1], np.array(self.return_raw_lst)[1:] / np.array(self.return_raw_lst)[:-1], axis=0)
                 adj_profit_rate = np.array(self.profit_lst) + 1
-                label_kwargs = {'ori_profit': ori_profit_rate, 'adj_profit': adj_profit_rate, 'ori_risk': np.array(elf.risk_raw_lst), 'adj_risk': np.array(self.risk_cbf_lst)}
+                label_kwargs = {'ori_profit': ori_profit_rate, 'adj_profit': adj_profit_rate, 'ori_risk': np.array(self.risk_raw_lst), 'adj_risk': np.array(self.risk_cbf_lst)}
                 self.mkt_observer.train(**label_kwargs)
 
             self.end_cputime = time.process_time()

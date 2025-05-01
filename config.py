@@ -29,9 +29,9 @@ class Config():
         self.notes = 'AAMAS MASA Implementation'
 
         self.benchmark_algo = 'MASA-dc' # Algorithm: 'MASA-dc', 'MASA-mlp', 'MASA-lstm', 'TD3-Profit', 'TD3-PR', 'TD3-SR', 'CRP', (Please implement firstly before running 'EG', 'OLMAR', 'PAMR', 'CORN', 'RMR', 'EIIE', 'PPN', 'RAT')
-        self.market_name = 'DJIA' # Financial Index: 'DJIA', 'SP500', 'CSI300'
+        self.market_name = 'CSI300' # Financial Index: 'DJIA', 'SP500', 'CSI300'
         self.topK = 10 # Number of assets in a portfolio (10, 20, 30)
-        self.num_epochs = 50 # episode.
+        self.num_epochs = 2 # episode.
 
         if 'TD3' in self.benchmark_algo:
             self.rl_model_name = 'TD3'

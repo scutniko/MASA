@@ -86,7 +86,7 @@ class MarketObserver:
             # sigma
             sigma_log_p_tensor = th.cat(self.sigma_log_p_lst, dim=0) # (num_of_batch, batch_size) -> (all_samples, )
             mkt_direction_tensor = th.cat(self.mkt_direction_lst, dim=0) # (num_of_batch, batch_size) -> (all_samples, )
-            loss_sigma = self.mkt_direction_loss_sigma(sigma_log_p_tensor[:-1], mkt_direction_tensor)
+            loss_sigma = self.mkt_direction_loss_sigma(sigma_log_p_tensor[:-1], mkt_direction_tensor.long())
             loss_val = loss_val + loss_sigma
             disp_str = disp_str +  'Loss(Sigma): {} |'.format(self.config.sigma_loss_weight * loss_sigma.detach().cpu().item())
 
