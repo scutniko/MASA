@@ -28,10 +28,10 @@ class Config():
 
         self.notes = 'AAMAS MASA Implementation'
 
-        self.benchmark_algo = 'MASA-dc' # Algorithm: 'MASA-dc', 'MASA-mlp', 'MASA-lstm', 'TD3-Profit', 'TD3-PR', 'TD3-SR', 'CRP', (Please implement firstly before running 'EG', 'OLMAR', 'PAMR', 'CORN', 'RMR', 'EIIE', 'PPN', 'RAT')
+        self.benchmark_algo = 'MASA-transformer' # Algorithm: 'MASA-dc', 'MASA-mlp', 'MASA-lstm', 'MASA-transformer', 'TD3-Profit', 'TD3-PR', 'TD3-SR', 'CRP', (Please implement firstly before running 'EG', 'OLMAR', 'PAMR', 'CORN', 'RMR', 'EIIE', 'PPN', 'RAT')
         self.market_name = 'CSI300' # Financial Index: 'DJIA', 'SP500', 'CSI300'
-        self.topK = 10 # Number of assets in a portfolio (10, 20, 30)
-        self.num_epochs = 2 # episode.
+        self.topK = 30 # Number of assets in a portfolio (10, 20, 30)
+        self.num_epochs = 100 # episode.
 
         if 'TD3' in self.benchmark_algo:
             self.rl_model_name = 'TD3'
@@ -65,14 +65,14 @@ class Config():
 
         self.trade_pattern = 1 # 1: Long only, 2: Long and short (Not applicable), 3: short only (Not applicable)
         self.lambda_1 = 1000.0 # return reward weight
-        self.lambda_2 = 10.0 # action reward weight
+        self.lambda_2 = 200.0 # action reward weight
         self.train_freq = [1, 'episode'] 
-        self.risk_default = 0.017
+        self.risk_default = 0.018
         if (self.market_name == 'DJIA') and (self.topK == 30):
             self.topK = 29 # Only 29 stocks having complete data in the DJIA during that period.
-        self.risk_up_bound = 0.012 # Decided by the observation of the training data set.  
-        self.risk_hold_bound = 0.014 
-        self.risk_down_bound = 0.017
+        self.risk_up_bound = 0.021 # Decided by the observation of the training data set.  
+        self.risk_hold_bound = 0.018 
+        self.risk_down_bound = 0.015
 
 
         self.period_mode = 1 
@@ -92,8 +92,8 @@ class Config():
         self.cbf_gamma = 0.7
         # TD3 config
         self.reward_scaling = 1 
-        self.learning_rate = 0.0001 
-        self.batch_size = 50
+        self.learning_rate = 0.0008
+        self.batch_size = 128
         self.gradient_steps = 1 
         self.ars_trial = 10
 
@@ -170,7 +170,7 @@ class Config():
         if self.mktobs_algo is not None:
             if 'dc' in self.mktobs_algo:
                 self.is_gen_dc_feat = True
-                self.dc_threshold = [0.01] 
+                self.dc_threshold = [0.005] 
             else:
                 self.is_gen_dc_feat = False
         else:
@@ -183,8 +183,8 @@ class Config():
     def load_model_config(self):
         self.use_features = ['close', 'open', 'high', 'low'] 
         self.window_size = 31
-        self.po_lr = 0.0001
-        self.po_weight_decay = 0.001
+        self.po_lr = 0.00001
+        self.po_weight_decay = 0.01
 
     def load_market_observer_config(self):
         self.freq = '1d'
@@ -199,6 +199,15 @@ class Config():
         self.sigma_min = 0.0  
         self.sigma_max = 1.0  
         
+        # Transformer特定配置参数
+        if self.mktobs_algo is not None and 'transformer' in self.mktobs_algo:
+            self.transformer_d_model = 128          # Transformer模型维度
+            self.transformer_nhead = 8              # 多头注意力头数
+            self.transformer_num_layers = 2         # 编码器层数
+            self.transformer_dim_feedforward = 256  # 前馈网络维度
+            self.transformer_dropout = 0.1          # Dropout率
+            self.transformer_activation = 'relu'    # 激活函数
+
         self.finestock_feat_cols_lst = []
         self.finemkt_feat_cols_lst = []
         for ifeat in self.use_features:

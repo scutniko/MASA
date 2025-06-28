@@ -20,7 +20,7 @@ class RiceQuantExtractor:
         self.market_name = 'CSI300'
         self.market_code = '000300.XSHG'
         self.freq = '60m' # '1d', '60m', 'tick'
-        self.topK = 10
+        self.topK = 30
         self.request_fields = ['open', 'high', 'low', 'close', 'volume'] # 'total_turnover']
          
     def get_price_data(self, mkt_code, tic, asset_name, recidx, suffix=None, start_date=None, end_date=None):
@@ -193,7 +193,7 @@ class RiceQuantExtractor:
         cap_weight.rename(columns={'order_book_id': 'code', 0: 'weight'}, inplace=True)
         cap_weight.sort_values(by=['weight'], ascending=False, inplace=True, ignore_index=True)
         cap_weight['rank'] = np.arange(1, len(cap_weight)+1)
-        cap_weight = cap_weight.head(10)
+        cap_weight = cap_weight.head(self.topK)
         
         print(cap_weight)
 

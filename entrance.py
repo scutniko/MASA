@@ -10,7 +10,7 @@
 
 import os
 os.environ['CUDA_DEVICE_ORDER'] = 'PCI_BUS_ID'
-os.environ['CUDA_VISIBLE_DEVICES'] = '0'
+os.environ['CUDA_VISIBLE_DEVICES'] = '1'
 import random 
 import numpy as np
 import torch as th
@@ -179,8 +179,8 @@ def entrance():
     Entrance function for running the MASA framework
     """
     current_date = datetime.datetime.now().strftime('%Y-%m-%d-%H-%M-%S')
-    rand_seed = int(time.mktime(datetime.datetime.strptime(current_date, '%Y-%m-%d-%H-%M-%S').timetuple()))
-
+    # rand_seed = int(time.mktime(datetime.datetime.strptime(current_date, '%Y-%m-%d-%H-%M-%S').timetuple()))
+    rand_seed = 2022
     random.seed(rand_seed)
     os.environ['PYTHONHASHSEED'] = str(rand_seed)
     np.random.seed(rand_seed)

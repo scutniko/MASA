@@ -428,3 +428,155 @@ def create_mkt_obs_model(config, **kwargs):
     )
     # Load checkpoint
     return model
+
+@register_mkt_obs_model
+def transformer_1(config, **kwargs):
+    model = Transformer_1(config, **kwargs)
+    return model
+
+class PositionalEncoding(nn.Module):
+    """位置编码模块，为Transformer添加位置信息"""
+    def __init__(self, d_model, max_len=5000, dropout=0.1):
+        super(PositionalEncoding, self).__init__()
+        self.dropout = nn.Dropout(p=dropout)
+        
+        pe = th.zeros(max_len, d_model)
+        position = th.arange(0, max_len, dtype=th.float).unsqueeze(1)
+        div_term = th.exp(th.arange(0, d_model, 2).float() * (-np.log(10000.0) / d_model))
+        pe[:, 0::2] = th.sin(position * div_term)
+        pe[:, 1::2] = th.cos(position * div_term)
+        pe = pe.unsqueeze(0).transpose(0, 1)
+        self.register_buffer('pe', pe)
+        
+    def forward(self, x):
+        # x: (seq_len, batch_size, d_model)
+        x = x + self.pe[:x.size(0), :]
+        return self.dropout(x)
+
+class Transformer_1(nn.Module):
+    def __init__(self, config, **kwargs):
+        super(Transformer_1, self).__init__()
+        self.name = 'transformer_1'
+        self.config = config
+        self.output_action_dim = kwargs['action_dim'] # for hidden vector to RL agent
+        
+        # 输入特征维度计算
+        self.num_stocks = self.config.topK
+        self.num_features = len(self.config.use_features)
+        self.window_len = self.config.fine_window_size
+        
+        # Transformer配置参数（从config获取，如果不存在则使用默认值）
+        self.d_model = getattr(self.config, 'transformer_d_model', 256)
+        self.nhead = getattr(self.config, 'transformer_nhead', 8)
+        self.num_encoder_layers = getattr(self.config, 'transformer_num_layers', 4)
+        self.dim_feedforward = getattr(self.config, 'transformer_dim_feedforward', 512)
+        self.dropout = getattr(self.config, 'transformer_dropout', 0.1)
+        
+        # 输入维度
+        self.stock_input_dim = self.num_stocks * self.num_features  # 每个时间步的股票特征维度
+        self.market_input_dim = self.num_features                   # 每个时间步的市场特征维度
+        
+        # 输入投影层
+        self.stock_projection = nn.Linear(self.stock_input_dim, self.d_model // 2)
+        self.market_projection = nn.Linear(self.market_input_dim, self.d_model // 2)
+        
+        # 位置编码
+        self.pos_encoder = PositionalEncoding(self.d_model, max_len=self.window_len, dropout=self.dropout)
+        
+        # Transformer编码器
+        encoder_layer = nn.TransformerEncoderLayer(
+            d_model=self.d_model,
+            nhead=self.nhead,
+            dim_feedforward=self.dim_feedforward,
+            dropout=self.dropout,
+            activation='gelu',
+            batch_first=False  # 使用(seq_len, batch, features)格式
+        )
+        self.transformer_encoder = nn.TransformerEncoder(encoder_layer, num_layers=self.num_encoder_layers)
+        
+        # 全局池化层
+        self.global_pool = nn.AdaptiveAvgPool1d(1)
+        
+        # 输出层
+        self.fc_merge = nn.Linear(self.d_model, self.output_action_dim, bias=True)
+        self.sm = nn.Softmax(dim=1)
+        
+        # Lambda和Sigma预测头
+        self.fc_lambda = nn.Linear(self.d_model, 3, bias=True)
+        self.fc_sigma = nn.Linear(self.d_model, 3, bias=True)
+        
+        self.gen_lambda = GenScore()
+        self.gen_sigma = GenScore()
+        
+        # 层归一化
+        self.layer_norm = nn.LayerNorm(self.d_model)
+        
+    def forward(self, x, **kwargs):
+        # fine stock data (x): (batch, features, num_of_stocks, window_size)
+        # fine market data: (batch, features, window_size) 
+        # kwargs: market, deterministic, device
+        
+        batch_size = x.size(0)
+        market = kwargs['market']
+        
+        # 重新组织数据维度
+        # x: (batch, features, stocks, window) -> (batch, window, features*stocks)
+        x_reshaped = x.permute(0, 3, 1, 2).contiguous()  # (batch, window, features, stocks)
+        x_reshaped = x_reshaped.view(batch_size, self.window_len, -1)  # (batch, window, features*stocks)
+        
+        # market: (batch, features, window) -> (batch, window, features)
+        market_reshaped = market.permute(0, 2, 1).contiguous()  # (batch, window, features)
+        
+        # 投影到模型维度
+        stock_embedded = self.stock_projection(x_reshaped)      # (batch, window, d_model//2)
+        market_embedded = self.market_projection(market_reshaped)  # (batch, window, d_model//2)
+        
+        # 融合股票和市场特征
+        combined_embedded = th.cat([stock_embedded, market_embedded], dim=2)  # (batch, window, d_model)
+        
+        # 转换为Transformer期望的格式: (seq_len, batch, d_model)
+        transformer_input = combined_embedded.permute(1, 0, 2)  # (window, batch, d_model)
+        
+        # 添加位置编码
+        transformer_input = self.pos_encoder(transformer_input)
+        
+        # Transformer编码
+        transformer_output = self.transformer_encoder(transformer_input)  # (window, batch, d_model)
+        
+        # 转回 (batch, window, d_model) 格式
+        transformer_output = transformer_output.permute(1, 0, 2)  # (batch, window, d_model)
+        
+        # 全局平均池化获取序列级表示
+        # (batch, window, d_model) -> (batch, d_model, window) -> (batch, d_model, 1) -> (batch, d_model)
+        pooled_output = self.global_pool(transformer_output.transpose(1, 2)).squeeze(-1)
+        
+        # 层归一化
+        final_representation = self.layer_norm(pooled_output)  # (batch, d_model)
+        
+        # 生成输出
+        hidden_vec = self.fc_merge(final_representation)  # (batch, num_of_stocks)
+        hidden_vec = self.sm(hidden_vec)  # softmax归一化
+        
+        # Lambda预测
+        lambda_vec = self.fc_lambda(final_representation)  # (batch, 3)
+        lambda_kwargs = {
+            'name': 'lambda', 
+            'deterministic': kwargs['deterministic'], 
+            'device': kwargs['device'], 
+            'score_min': self.config.lambda_min, 
+            'score_max': self.config.lambda_max
+        }
+        lambda_val, lambda_log_p = self.gen_lambda(lambda_vec, **lambda_kwargs)
+        
+        # Sigma预测
+        sigma_vec = self.fc_sigma(final_representation)  # (batch, 3)
+        sigma_kwargs = {
+            'name': 'sigma', 
+            'deterministic': kwargs['deterministic'], 
+            'device': kwargs['device'], 
+            'score_min': self.config.sigma_min, 
+            'score_max': self.config.sigma_max
+        }
+        sigma_val, sigma_log_p = self.gen_sigma(sigma_vec, **sigma_kwargs)
+        
+        return hidden_vec, lambda_val, sigma_val, lambda_log_p, sigma_log_p

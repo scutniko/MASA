@@ -8,7 +8,7 @@
  Author:       MASA
 ---------------------------------
 '''
-
+import warnings
 import numpy as np
 import pandas as pd
 import time
@@ -17,6 +17,7 @@ solvers.options['show_progress'] = False
 import cvxpy as cp
 from scipy.linalg import sqrtm
 import scipy.stats as spstats
+warnings.filterwarnings('ignore', message='Solution may be inaccurate')
 def RL_withoutController(a_rl, env=None):
     a_cbf = np.array([0]*env.stock_num)
     a_rl = np.array(a_rl)
