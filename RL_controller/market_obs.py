@@ -471,6 +471,7 @@ class Transformer_1(nn.Module):
         self.num_encoder_layers = getattr(self.config, 'transformer_num_layers', 4)
         self.dim_feedforward = getattr(self.config, 'transformer_dim_feedforward', 512)
         self.dropout = getattr(self.config, 'transformer_dropout', 0.1)
+        self.use_cls_token = getattr(self.config, 'transformer_use_cls_token', True)
         
         # 输入维度
         self.stock_input_dim = self.num_stocks * self.num_features  # 每个时间步的股票特征维度
@@ -480,8 +481,18 @@ class Transformer_1(nn.Module):
         self.stock_projection = nn.Linear(self.stock_input_dim, self.d_model // 2)
         self.market_projection = nn.Linear(self.market_input_dim, self.d_model // 2)
         
+        # [CLS] Token (如果启用)
+        if self.use_cls_token:
+            self.cls_token = nn.Parameter(th.randn(1, 1, self.d_model))
+            # 序列长度需要+1来容纳[CLS] token
+            max_len = self.window_len + 1
+        else:
+            max_len = self.window_len
+            # 如果不使用CLS token，保留全局池化层
+            self.global_pool = nn.AdaptiveAvgPool1d(1)
+        
         # 位置编码
-        self.pos_encoder = PositionalEncoding(self.d_model, max_len=self.window_len, dropout=self.dropout)
+        self.pos_encoder = PositionalEncoding(self.d_model, max_len=max_len, dropout=self.dropout)
         
         # Transformer编码器
         encoder_layer = nn.TransformerEncoderLayer(
@@ -493,9 +504,6 @@ class Transformer_1(nn.Module):
             batch_first=False  # 使用(seq_len, batch, features)格式
         )
         self.transformer_encoder = nn.TransformerEncoder(encoder_layer, num_layers=self.num_encoder_layers)
-        
-        # 全局池化层
-        self.global_pool = nn.AdaptiveAvgPool1d(1)
         
         # 输出层
         self.fc_merge = nn.Linear(self.d_model, self.output_action_dim, bias=True)
@@ -537,21 +545,33 @@ class Transformer_1(nn.Module):
         # 转换为Transformer期望的格式: (seq_len, batch, d_model)
         transformer_input = combined_embedded.permute(1, 0, 2)  # (window, batch, d_model)
         
+        # 如果使用[CLS] Token，将其添加到序列开头
+        if self.use_cls_token:
+            # 扩展[CLS] token到当前batch size
+            cls_tokens = self.cls_token.expand(1, batch_size, -1)  # (1, batch, d_model)
+            # 将[CLS] token添加到序列开头
+            transformer_input = th.cat([cls_tokens, transformer_input], dim=0)  # (window+1, batch, d_model)
+        
         # 添加位置编码
         transformer_input = self.pos_encoder(transformer_input)
         
         # Transformer编码
-        transformer_output = self.transformer_encoder(transformer_input)  # (window, batch, d_model)
+        transformer_output = self.transformer_encoder(transformer_input)  # (window+1, batch, d_model) 或 (window, batch, d_model)
         
-        # 转回 (batch, window, d_model) 格式
-        transformer_output = transformer_output.permute(1, 0, 2)  # (batch, window, d_model)
-        
-        # 全局平均池化获取序列级表示
-        # (batch, window, d_model) -> (batch, d_model, window) -> (batch, d_model, 1) -> (batch, d_model)
-        pooled_output = self.global_pool(transformer_output.transpose(1, 2)).squeeze(-1)
+        # 获取序列级表示
+        if self.use_cls_token:
+            # 使用[CLS] token的输出作为序列表示
+            final_representation = transformer_output[0]  # (batch, d_model)
+        else:
+            # 转回 (batch, window, d_model) 格式
+            transformer_output = transformer_output.permute(1, 0, 2)  # (batch, window, d_model)
+            # 全局平均池化获取序列级表示
+            # (batch, window, d_model) -> (batch, d_model, window) -> (batch, d_model, 1) -> (batch, d_model)
+            pooled_output = self.global_pool(transformer_output.transpose(1, 2)).squeeze(-1)
+            final_representation = pooled_output  # (batch, d_model)
         
         # 层归一化
-        final_representation = self.layer_norm(pooled_output)  # (batch, d_model)
+        final_representation = self.layer_norm(final_representation)  # (batch, d_model)
         
         # 生成输出
         hidden_vec = self.fc_merge(final_representation)  # (batch, num_of_stocks)

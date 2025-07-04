@@ -72,7 +72,7 @@ class Config():
             self.topK = 29 # Only 29 stocks having complete data in the DJIA during that period.
         self.risk_up_bound = 0.021 # Decided by the observation of the training data set.  
         self.risk_hold_bound = 0.018 
-        self.risk_down_bound = 0.015
+        self.risk_down_bound = 0.016
 
 
         self.period_mode = 1 
@@ -92,7 +92,7 @@ class Config():
         self.cbf_gamma = 0.7
         # TD3 config
         self.reward_scaling = 1 
-        self.learning_rate = 0.0008
+        self.learning_rate = 0.0007
         self.batch_size = 128
         self.gradient_steps = 1 
         self.ars_trial = 10
@@ -184,7 +184,7 @@ class Config():
         self.use_features = ['close', 'open', 'high', 'low'] 
         self.window_size = 31
         self.po_lr = 0.00001
-        self.po_weight_decay = 0.01
+        self.po_weight_decay = 0.007
 
     def load_market_observer_config(self):
         self.freq = '1d'
@@ -207,6 +207,7 @@ class Config():
             self.transformer_dim_feedforward = 256  # 前馈网络维度
             self.transformer_dropout = 0.1          # Dropout率
             self.transformer_activation = 'relu'    # 激活函数
+            self.transformer_use_cls_token = True   # 是否使用[CLS] Token进行序列池化
 
         self.finestock_feat_cols_lst = []
         self.finemkt_feat_cols_lst = []
@@ -234,7 +235,7 @@ class Config():
             'learning_starts': 100, 'batch_size': self.batch_size, 'tau': 0.005, 'gamma': 0.99, 'train_freq': (self.train_freq[0], self.train_freq[1]),
             'gradient_steps': self.gradient_steps, 'action_noise': None,  'replay_buffer_class': None, 'replay_buffer_kwargs': None, 
             'optimize_memory_usage': False, 'tensorboard_log': None, 'policy_kwargs': None, 
-            'verbose': 1, 'seed': self.seed_num, 'device': 'auto', '_init_setup_model': True,
+            'verbose': 1, 'seed': self.seed_num, 'device': 'cuda:0', '_init_setup_model': True,
         }
         algo_para = {
             'TD3': {'policy_delay': 2, 'target_policy_noise': 0.2, 'target_noise_clip': 0.5,},
@@ -289,6 +290,10 @@ class Config():
         log_str = log_str + para_str
         para_str = 'enable_market_observer: {}, mktobs_algo: {}, feat_scaler: {} \n'.format(self.enable_market_observer, self.mktobs_algo, self.feat_scaler)
         log_str = log_str + para_str
+        if self.mktobs_algo is not None and 'transformer' in self.mktobs_algo:
+            para_str = 'transformer_d_model: {}, transformer_nhead: {}, transformer_num_layers: {}, transformer_use_cls_token: {} \n'.format(
+                self.transformer_d_model, self.transformer_nhead, self.transformer_num_layers, self.transformer_use_cls_token)
+            log_str = log_str + para_str
         log_str = log_str + '=' * 30 + '\n'
 
         print(log_str, flush=True)
