@@ -15,8 +15,13 @@ class RiceQuantExtractor:
         self.fdir = './data'
         os.makedirs(self.fdir, exist_ok=True)
 
-        self.start_date = '2013-01-01'
-        self.end_date = '2024-01-01' 
+        # 数据下载时间范围
+        self.start_date = '2013-08-30'  # 数据下载开始日期
+        self.end_date = '2023-09-02'    # 数据下载结束日期
+        
+        # 权重基准日期（用于确定选择哪些股票）
+        self.weight_date = '2013-08-31'  # 权重基准日期，可以独立设置
+        
         self.market_name = 'CSI300'
         self.market_code = '000300.XSHG'
         self.freq = '60m' # '1d', '60m', 'tick'
@@ -175,7 +180,8 @@ class RiceQuantExtractor:
         cnt2 = 0
 
         for idx in range(total_num_stocks):
-            fpath = os.path.join(self.fdir, 'data_{}'.format(self.freq), '{}_{}.csv'.format(weights['code'][idx], self.freq))
+            fxdir = os.path.join(self.fdir, '{}_{}_{}'.format(self.market_name, self.topK, self.freq))
+            fpath = os.path.join(fxdir, '{}_{}.csv'.format(weights['code'][idx], self.freq))
             if os.path.exists(fpath):
                 cnt1 = cnt1 + 1
                 print("The data file of stock {} already exists.".format(weights['code'][idx]))
@@ -185,22 +191,37 @@ class RiceQuantExtractor:
                                 asset_name=weights['code'][idx], recidx=idx)
         # print("cnt1: {}, cnt2: {}".format(cnt1, cnt2))
     
-    def get_constituent_weight(self):
-        # Collect the weights of constituent stocks in CSI300
-        cap_weight = rqdatac.index_weights(order_book_id=self.market_code, date=self.start_date)
-        cap_weight = pd.DataFrame(cap_weight)
-        cap_weight.reset_index(drop=False, inplace=True)
-        cap_weight.rename(columns={'order_book_id': 'code', 0: 'weight'}, inplace=True)
-        cap_weight.sort_values(by=['weight'], ascending=False, inplace=True, ignore_index=True)
-        cap_weight['rank'] = np.arange(1, len(cap_weight)+1)
-        cap_weight = cap_weight.head(self.topK)
+    def get_constituent_by_weight(self):
+        # 根据权重获取CSI300指数前topK支股票
+        print(f"获取CSI300指数权重数据 (权重基准日期: {self.weight_date})")
+        print(f"数据下载时间范围: {self.start_date} 到 {self.end_date}")
         
+        # 获取所有成分股的权重数据
+        all_weights = rqdatac.index_weights(order_book_id=self.market_code, date=self.weight_date)
+        all_weights = pd.DataFrame(all_weights)
+        all_weights.reset_index(drop=False, inplace=True)
+        all_weights.rename(columns={'order_book_id': 'code', 0: 'weight'}, inplace=True)
+        
+        print(f"获取到CSI300成分股数量: {len(all_weights)}")
+        
+        # 按权重降序排列
+        all_weights.sort_values(by=['weight'], ascending=False, inplace=True, ignore_index=True)
+        
+        # 选择前topK支股票
+        cap_weight = all_weights.head(self.topK).copy()
+        cap_weight['rank'] = np.arange(1, len(cap_weight)+1)
+        
+        print(f"按权重排序，选择前{self.topK}支股票:")
+        print(f"权重前10名股票: {all_weights.head(10)['code'].tolist()}")
+        print(f"选中的前{self.topK}支股票:")
         print(cap_weight)
 
+        # 保存权重文件
         fdirx = os.path.join(self.fdir, 'Weights')  
         os.makedirs(fdirx, exist_ok=True)
         fpath = os.path.join(fdirx, '{}_Weights_{}.csv'.format(self.market_name, self.freq))
         cap_weight.to_csv(fpath, index=False)
+        print(f"权重文件已保存到: {fpath}")
 
     def demo(self):
         mkt_index = rqdatac.get_price(order_book_ids=['000300.XSHG'], start_date='2024-01-01', end_date='2024-10-31', frequency='1d', fields=self.request_fields, skip_suspended=False, market='cn')
@@ -210,36 +231,50 @@ class RiceQuantExtractor:
         fdir = os.path.join(self.fdir, '{}_{}_{}'.format(self.market_name, self.topK, self.freq))
         if not os.path.exists(fdir):
             raise ValueError("Please provide a list of constituent stocks")
-        all_data = []
-        file_paths = [os.path.join(fdir, f) for f in os.listdir(fdir) if os.path.isfile(os.path.join(fdir, f))]
         
-        for i, file_path in enumerate(sorted(file_paths), 1):
-            df = pd.read_csv(file_path)
-            df['stock'] = i
-            required_cols = ['date', 'stock', 'open', 'high', 'low', 'close', 'volume']
-            col_mapping = {
-                'Date': 'date',
-                'Open': 'open', 
-                'High': 'high',
-                'Low': 'low',
-                'Close': 'close',
-                'Volume': 'volume'
-            }
-            df.rename(columns=col_mapping, inplace=True, errors='ignore')
-            if all(col in df.columns for col in required_cols):
-                df = df[required_cols]
-                all_data.append(df)
+        # 读取权重文件，按权重排序来确定股票编号
+        wpath = os.path.join(self.fdir, 'Weights', '{}_Weights_{}.csv'.format(self.market_name, self.freq))
+        weights = pd.read_csv(wpath)
+        weights.sort_values(by=['rank'], ascending=True, inplace=True, ignore_index=True)
+        
+        all_data = []
+        
+        # 按权重文件中的顺序处理股票数据
+        for idx, row in weights.iterrows():
+            stock_code = row['code']
+            stock_rank = row['rank']
+            file_path = os.path.join(fdir, f'{stock_code}_{self.freq}.csv')
+            
+            if os.path.exists(file_path):
+                df = pd.read_csv(file_path)
+                df['stock'] = stock_rank  # 使用权重排名作为股票编号
+                required_cols = ['date', 'stock', 'open', 'high', 'low', 'close', 'volume']
+                col_mapping = {
+                    'Date': 'date',
+                    'Open': 'open', 
+                    'High': 'high',
+                    'Low': 'low',
+                    'Close': 'close',
+                    'Volume': 'volume'
+                }
+                df.rename(columns=col_mapping, inplace=True, errors='ignore')
+                if all(col in df.columns for col in required_cols):
+                    df = df[required_cols]
+                    all_data.append(df)
+                    print(f"股票 {stock_code} (权重排名第{stock_rank}) -> 股票编号 {stock_rank}")
+                else:
+                    print(f"警告：文件 {file_path} 缺少必要的列，已跳过")
             else:
-                print(f"警告：文件 {file_path} 缺少必要的列，已跳过")
+                print(f"警告：找不到股票 {stock_code} 的数据文件")
 
         merged_data = pd.concat(all_data, ignore_index=True)
         merged_data.sort_values(['stock', 'date'], inplace=True)
         merged_data.to_csv('./data/{}_{}_{}.csv'.format(self.market_name, self.topK, self.freq), index=False)
 
-        print(f"已成功将{len(file_paths)}个股票数据合并")
+        print(f"已成功将{len(all_data)}个股票数据合并，按权重排序分配股票编号")
 
     def run(self):
-        self.get_constituent_weight() # Get the stock list and capital-based weight of constituent stocks in CSI300
+        self.get_constituent_by_weight() # 根据权重获取CSI300前topK支股票列表
         self.get_market_index_data() # Get market index data
         self.get_stock_price_data() # Get stock price data
         self.merge_stock_data() # Merge stock data
