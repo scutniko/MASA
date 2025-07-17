@@ -87,8 +87,8 @@ class MarketObserver:
             sigma_log_p_tensor = th.cat(self.sigma_log_p_lst, dim=0) # (num_of_batch, batch_size) -> (all_samples, )
             mkt_direction_tensor = th.cat(self.mkt_direction_lst, dim=0) # (num_of_batch, batch_size) -> (all_samples, )
             loss_sigma = self.mkt_direction_loss_sigma(sigma_log_p_tensor[:-1], mkt_direction_tensor.long())
-            loss_val = loss_val + loss_sigma
-            disp_str = disp_str +  'Loss(Sigma): {} |'.format(self.config.sigma_loss_weight * loss_sigma.detach().cpu().item())
+            loss_val = loss_val + self.config.sigma_loss_weight * loss_sigma  # 修复：在实际损失计算中使用权重
+            disp_str = disp_str +  'Loss(Sigma): {} |'.format((self.config.sigma_loss_weight * loss_sigma).detach().cpu().item())
 
         self.optimizer.zero_grad()
         loss_val.backward()
@@ -518,6 +518,62 @@ class Transformer_1(nn.Module):
         
         # 层归一化
         self.layer_norm = nn.LayerNorm(self.d_model)
+        
+        # 应用稳定的初始化
+        self._init_weights()
+        
+    def _init_weights(self):
+        """使用稳定的权重初始化方法"""
+        # 初始化投影层
+        nn.init.xavier_uniform_(self.stock_projection.weight, gain=1.0)
+        nn.init.xavier_uniform_(self.market_projection.weight, gain=1.0)
+        if self.stock_projection.bias is not None:
+            nn.init.constant_(self.stock_projection.bias, 0)
+        if self.market_projection.bias is not None:
+            nn.init.constant_(self.market_projection.bias, 0)
+        
+        # 初始化CLS Token (如果使用)
+        if self.use_cls_token:
+            # 使用较小的标准差初始化CLS token
+            nn.init.normal_(self.cls_token, mean=0.0, std=0.02)
+        
+        # 初始化输出层
+        nn.init.xavier_uniform_(self.fc_merge.weight, gain=1.0)
+        nn.init.xavier_uniform_(self.fc_lambda.weight, gain=1.0)
+        nn.init.xavier_uniform_(self.fc_sigma.weight, gain=1.0)
+        
+        if self.fc_merge.bias is not None:
+            nn.init.constant_(self.fc_merge.bias, 0)
+        if self.fc_lambda.bias is not None:
+            nn.init.constant_(self.fc_lambda.bias, 0)
+        if self.fc_sigma.bias is not None:
+            nn.init.constant_(self.fc_sigma.bias, 0)
+        
+        # 初始化LayerNorm
+        nn.init.constant_(self.layer_norm.weight, 1.0)
+        nn.init.constant_(self.layer_norm.bias, 0.0)
+        
+        # 初始化Transformer编码器内部参数
+        for module in self.transformer_encoder.modules():
+            if isinstance(module, nn.Linear):
+                # 对于Transformer内部的线性层，使用Xavier初始化
+                nn.init.xavier_uniform_(module.weight, gain=1.0)
+                if module.bias is not None:
+                    nn.init.constant_(module.bias, 0)
+            elif isinstance(module, nn.LayerNorm):
+                # LayerNorm的标准初始化
+                nn.init.constant_(module.weight, 1.0)
+                nn.init.constant_(module.bias, 0.0)
+            elif isinstance(module, nn.MultiheadAttention):
+                # 多头注意力的特殊初始化
+                if hasattr(module, 'in_proj_weight') and module.in_proj_weight is not None:
+                    nn.init.xavier_uniform_(module.in_proj_weight, gain=1.0)
+                if hasattr(module, 'out_proj') and module.out_proj.weight is not None:
+                    nn.init.xavier_uniform_(module.out_proj.weight, gain=1.0)
+                if hasattr(module, 'in_proj_bias') and module.in_proj_bias is not None:
+                    nn.init.constant_(module.in_proj_bias, 0)
+                if hasattr(module, 'out_proj') and module.out_proj.bias is not None:
+                    nn.init.constant_(module.out_proj.bias, 0)
         
     def forward(self, x, **kwargs):
         # fine stock data (x): (batch, features, num_of_stocks, window_size)

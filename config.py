@@ -31,7 +31,7 @@ class Config():
         self.benchmark_algo = 'MASA-transformer' # Algorithm: 'MASA-dc', 'MASA-mlp', 'MASA-lstm', 'MASA-transformer', 'TD3-Profit', 'TD3-PR', 'TD3-SR', 'CRP', (Please implement firstly before running 'EG', 'OLMAR', 'PAMR', 'CORN', 'RMR', 'EIIE', 'PPN', 'RAT')
         self.market_name = 'CSI300' # Financial Index: 'DJIA', 'SP500', 'CSI300'
         self.topK = 30 # Number of assets in a portfolio (10, 20, 30)
-        self.num_epochs = 100 # episode.
+        self.num_epochs = 80 # episode.
 
         if 'TD3' in self.benchmark_algo:
             self.rl_model_name = 'TD3'
@@ -92,7 +92,7 @@ class Config():
         self.cbf_gamma = 0.7
         # TD3 config
         self.reward_scaling = 1 
-        self.learning_rate = 0.0007
+        self.learning_rate = 0.001
         self.batch_size = 128
         self.gradient_steps = 1 
         self.ars_trial = 10
@@ -184,7 +184,7 @@ class Config():
         self.use_features = ['close', 'open', 'high', 'low'] 
         self.window_size = 31
         self.po_lr = 0.00001
-        self.po_weight_decay = 0.007
+        self.po_weight_decay = 0.001
 
     def load_market_observer_config(self):
         self.freq = '1d'
@@ -193,7 +193,7 @@ class Config():
         self.feat_scaler = 10 
         
         self.hidden_vec_loss_weight = 1e4
-        self.sigma_loss_weight = 1e5
+        self.sigma_loss_weight = 10
         self.lambda_min = 0.0
         self.lambda_max = 1.0
         self.sigma_min = 0.0  
@@ -201,12 +201,12 @@ class Config():
         
         # Transformer特定配置参数
         if self.mktobs_algo is not None and 'transformer' in self.mktobs_algo:
-            self.transformer_d_model = 128          # Transformer模型维度
+            self.transformer_d_model = 256          # Transformer模型维度
             self.transformer_nhead = 8              # 多头注意力头数
-            self.transformer_num_layers = 2         # 编码器层数
-            self.transformer_dim_feedforward = 256  # 前馈网络维度
+            self.transformer_num_layers = 4         # 编码器层数
+            self.transformer_dim_feedforward = 512  # 前馈网络维度
             self.transformer_dropout = 0.1          # Dropout率
-            self.transformer_activation = 'relu'    # 激活函数
+            self.transformer_activation = 'gelu'    # 激活函数
             self.transformer_use_cls_token = True   # 是否使用[CLS] Token进行序列池化
 
         self.finestock_feat_cols_lst = []
